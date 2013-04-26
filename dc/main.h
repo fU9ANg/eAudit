@@ -36,4 +36,19 @@ typedef struct tag_SRTA_HDR
 }   PSRTA_HDR,*PSRTA_HDR_ID;            
 #define PSRTA_HDR_SIZE sizeof(PSRTA_HDR)
 
+/* 用户注册信息列表定义 */
+typedef struct tag_DCUSR_INFO
+{
+    int dc_usr_id;
+    char dc_usr_name[256];
+    unsigned char dc_usr_mac[6];
+    char dc_usr_ip[20];
+    char dc_usr_os_info[256];
+    char dc_usr_hostname[256];
+    unsigned char dc_usr_lock_status;
+    char dc_usr_reg_detail[256];
+    char dc_usr_real_ip[20];
+}   DCUSR_INFO,*DCUSR_INFO_ID;            
+#define DCUSR_INFO_SIZE sizeof(DCUSR_INFO)
+
 #endif // _DC_MAIN_H
