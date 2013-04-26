@@ -51,4 +51,12 @@ typedef struct tag_DCUSR_INFO
 }   DCUSR_INFO,*DCUSR_INFO_ID;            
 #define DCUSR_INFO_SIZE sizeof(DCUSR_INFO)
 
+/* 传入参数接口定义 */
+typedef struct tagDC_INF_PARA
+{
+	key_t usr_list_key;
+	int usr_num;
+}   DC_INF_PARA,*DC_INF_PARA_ID;
+#define DC_INF_PARA_SIZE sizeof(DC_INF_PARA)
+
 #endif // _DC_MAIN_H
