@@ -44,4 +44,15 @@ typedef struct tagNTP_SERVER_NETSEG
 }   NTP_SERVER_NETSEG, *NTP_SERVER_NETSEG_ID;
 #define NTP_SERVER_NETSEG_SIZE sizeof(NTP_SERVER_NETSEG)
 
+/* 定义NTP主时间同步数据结构 */
+typedef struct tagNTP_TIMERSYN_SERVER
+{
+    NTP_SERVER_ADDRESS_ID ntp_server_address_id;
+    NTP_SERVER_NETSEG_ID ntp_server_netseg_id;
+    int ntp_server_num;
+    int ntp_netseg_num;
+    int timer_time;
+}   NTP_TIMERSYN_SERVER, *NTP_TIMERSYN_SERVER_ID;
+#define NTP_TIMERSYN_SERVER_SIZE sizeof(NTP_TIMERSYN_SERVER)
+
 #endif  // _NTP_CONFIG_H
