@@ -36,4 +36,12 @@ typedef struct tagNTP_SERVER_ADDRESS
 }   NTP_SERVER_ADDRESS, *NTP_SERVER_ADDRESS_ID;
 #define NTP_SERVER_ADDRESS_SIZE sizeof(NTP_SERVER_ADDRESS)
 
+/* 定义NTP服务器可以允许时间同步网段 */
+typedef struct tagNTP_SERVER_NETSEG
+{
+    char ip[NTP_SERVER_STR_LEN];
+    char mask[NTP_SERVER_STR_LEN];
+}   NTP_SERVER_NETSEG, *NTP_SERVER_NETSEG_ID;
+#define NTP_SERVER_NETSEG_SIZE sizeof(NTP_SERVER_NETSEG)
+
 #endif  // _NTP_CONFIG_H
