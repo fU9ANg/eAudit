@@ -81,4 +81,17 @@ typedef struct tagHANDMODIFYTIME_SERVER
 }   HANDMODIFYTIME_SERVER, *HANDMODIFYTIME_SERVER_ID;
 #define HANDMODIFYTIME_SERVER_SIZE sizeof(HANDMODIFYTIME_SERVER)
 
+
+/* 声明外部函数 */
+extern void DEBUG(const char *fmt, ...);
+extern int Dispose_HandNetTime_Conf_Content(unsigned char *file_cnt_buf,unsigned long real_num,HANDMODIFYTIME_SERVER_ID p);
+extern int Check_HandNetTime_conf_file(int fd,unsigned long file_size,unsigned long *num,  unsigned char *file_cnt_buf );
+extern int Check_SecondTimeSyn_conf_file(int fd,unsigned long file_size,unsigned long *num,  unsigned char *file_cnt_buf ,unsigned long *timevals);
+extern int Dispose_SecondTimeSyn_Conf_Content(unsigned char *file_cnt_buf,unsigned long real_num,SECOND_TIMERSYN_SERVER_ID p);
+extern int Check_NetTimeSyn_conf_file(int fd,unsigned long file_size,unsigned long *num,  unsigned long *netseg_num, unsigned char *file_cnt_buf ,unsigned long *timevals);
+extern int Dispose_NetTimeSyn_Conf_Content(unsigned char *file_cnt_buf,unsigned long real_num,unsigned long real_netseg_num,NTP_TIMERSYN_SERVER_ID p);
+extern int Check_HandNetTime_ConfFile(int *fd,unsigned long *file_size);
+extern int Check_SecondTimeSyn_ConfFile(int *fd,unsigned long *file_size);
+extern int Check_NetTimeSyn_ConfFile(int *fd,unsigned long *file_size);
+
 #endif  // _NTP_CONFIG_H
