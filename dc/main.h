@@ -26,4 +26,14 @@ typedef struct tag_SET
     struct sockaddr_in addr;
 }   MESSAGE_QUEUE;
 
+/* 通信头部定义 */
+typedef struct tag_SRTA_HDR
+{
+    unsigned char   flag[4];
+    unsigned short  version;
+    unsigned char   opt_code;
+    unsigned long   param_length;
+}   PSRTA_HDR,*PSRTA_HDR_ID;            
+#define PSRTA_HDR_SIZE sizeof(PSRTA_HDR)
+
 #endif // _DC_MAIN_H
