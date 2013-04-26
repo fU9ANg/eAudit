@@ -17,4 +17,13 @@
 
 #define DC_USR_NUM 4000
 
+/* 接收消息结构体 */
+typedef struct tag_SET
+{
+    unsigned char flag;
+    unsigned char length;
+    unsigned char message[RECV_BYTES_LEN];
+    struct sockaddr_in addr;
+}   MESSAGE_QUEUE;
+
 #endif // _DC_MAIN_H
