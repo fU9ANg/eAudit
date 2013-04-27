@@ -1,0 +1,504 @@
+/*
+ *  Author: fU9ANg
+ *  E-mail: bb.newlife@gmail.com
+ *
+ *  Written 2009
+ */
+
+#include <sqlca.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <time.h>
+#include <libpq-fe.h>
+
+EXEC SQL INCLUDE sqlca;
+
+#include "interface.h"
+#include "db.h"
+#include "db_config.h"
+#include "debug.h"
+#include "ftp_global.h"
+
+/* 
+ * I've never used embedded SQL in c though years ago,
+ * i did used pascal for MSSQL.
+ */
+
+	void
+connect_db(PGconn**	conn,
+	const char*	host,
+	const int	port,
+	const char*	database,
+	const char*	user,
+	const char*	password
+	)
+{	
+	while(1) {
+
+		if(ESQL_OK == conn_db(host, port, database, user, password)) {
+
+			if(ESQL_OK == conn_db_data(conn, host, port, database, user, password, 10)) {
+
+				INFO("Connect Database %s OK.", host);
+				return;
+			}
+			else 	disconn_db();
+		}
+		sleep(CONN_DB_FAIL_SLEEP_SEC);
+	}
+	
+/*
+	while(ESQL_ERR == conn_local_db())
+	{
+		sleep(CONN_DB_FAIL_SLEEP_SEC);
+	}
+	while(ESQL_ERR == conn_local_db_data(conn))
+	{
+		sleep(CONN_DB_FAIL_SLEEP_SEC);
+	}
+*/
+	INFO("Connect Database %s OK.", host);
+
+	return;
+}
+
+
+	int
+conn_db(const char *host,
+	const int   port,
+	const char *database,
+	const char *user,
+	const char *password
+	)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char db_target  [64];
+		char db_user    [32];
+		char db_password[64];
+	EXEC SQL END   DECLARE SECTION;
+
+	if(!strcmp(host,"127.0.0.1") || !strcmp(host, "localhost"))
+		snprintf(db_target, 64, "unix:postgresql://%s:%d/%s",host, port, database);
+	else
+		snprintf(db_target, 64, "tcp:postgresql://%s:%d/%s", host, port, database);
+    
+	snprintf(db_user,     32, "%s", user);
+	snprintf(db_password, 64, "%s", password);
+	
+	EXEC SQL CONNECT TO :db_target USER :db_user USING :db_password;
+	if(sqlca.sqlcode < 0) {
+
+		fprintf(stderr, "%ld %s\n", sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+		return ESQL_ERR;
+	}
+	
+	EXEC SQL SET CLIENT_ENCODING TO 'GBK';
+	return ESQL_OK;
+}
+
+
+	int
+conn_db_data(PGconn** conn,
+	const char *  host,
+	const int     port,
+	const char *  database,
+	const char *  user,
+	const char *  password,
+	int	      timeout
+	)
+{
+
+	char  conninfo[512];
+
+	/* get connection information */
+	snprintf(conninfo, sizeof(conninfo)-1, 					\
+		"hostaddr='%s' port=%d dbname='%s' user='%s' password='%s' connect_timeout=%d",
+		host, port, database, user, password, timeout);
+	conninfo[sizeof(conninfo)-1] = 0x00;
+
+	*conn = PQconnectdb(conninfo);
+	
+	if (PQstatus(*conn) != CONNECTION_OK) {
+
+	   	fprintf(stderr, "Connection to database failed: %s", PQerrorMessage(*conn));
+		PQfinish(*conn);
+		return ESQL_ERR;
+	}	
+	return ESQL_OK;
+}
+
+
+	int
+conn_local_db()
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char db_target[64];
+		char db_user  [32];
+	EXEC SQL END   DECLARE SECTION;
+	
+	snprintf(db_target, 64, "unix:postgresql://%s:%d/%s",			\
+		DEF_DB_CONN_IP, DEF_DB_PORT, DEF_DB_CONN_DB_NAME);
+	snprintf(db_user, 32, "%s",DEF_DB_CONN_USR_NAME);
+	
+	EXEC SQL CONNECT TO :db_target  USER :db_user;
+	if(sqlca.sqlcode < 0)
+	{
+		fprintf(stderr, "%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+		return ESQL_ERR;
+	}
+	EXEC SQL SET CLIENT_ENCODING TO 'GBK';
+
+	return ESQL_OK;
+}
+
+
+	int
+conn_local_db_data(conn)
+	PGconn** conn;
+{
+
+	char conninfo[512];
+
+	/* set a string of connection information */
+	snprintf(conninfo, sizeof(conninfo)-1,					\
+		"hostaddr='%s' port=%d dbname='%s' user='%s' connect_timeout=%d",
+		DEF_DB_CONN_IP, DEF_DB_PORT, DEF_DB_CONN_DB_NAME,		\
+		DEF_DB_CONN_USR_NAME, DEF_DB_CONN_TIEMOUT);
+	conninfo[sizeof(conninfo)-1] = 0x00;
+
+	*conn = PQconnectdb(conninfo);
+	
+	if (PQstatus(*conn) != CONNECTION_OK) {
+
+	   	fprintf(stderr, "Connection to database failed: %s",		\
+			PQerrorMessage(*conn));
+		PQfinish(*conn);
+		return ESQL_ERR;
+	}	
+	return ESQL_OK;
+}
+
+
+	int
+disconn_db(void)
+{
+	EXEC SQL DISCONNECT;
+	
+	if(sqlca.sqlcode < 0) {
+
+		fprintf(stderr, "%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+		return ESQL_ERR;
+	}
+	return ESQL_OK;
+}
+
+
+	int
+write_common_session_into_db(
+	EA_COMMON_SESSION_TBL_ID common_session_tbl_id,
+	char*			 cur_date,
+	char*			 protocol
+	)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char   sqlstr[2048];	
+	EXEC SQL END   DECLARE SECTION;
+	
+	struct in_addr tmpaddr;
+	struct tm*     tmptime;
+	
+	char start_time[TIME_STR_SIZE+1];
+	char end_time  [TIME_STR_SIZE+1];
+
+	char src_ip[MAX_STR_IP_LEN+1];
+	char dst_ip[MAX_STR_IP_LEN+1];
+	
+	char src_mac[MAX_STR_MAC_LEN+1];
+	char dst_mac[MAX_STR_MAC_LEN+1];
+
+#ifdef _DEBUG
+	printf("\n\n**************** session ******************\n");
+
+	printf("session_id:%lu\n", common_session_tbl_id->session_id);
+	printf("p_type:%d\n", 	   common_session_tbl_id->pro_type_id);
+
+
+	printf("src_mac:%.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n", 
+		common_session_tbl_id->src_mac[0], common_session_tbl_id->src_mac[1],
+		common_session_tbl_id->src_mac[2], common_session_tbl_id->src_mac[3],
+		common_session_tbl_id->src_mac[4], common_session_tbl_id->src_mac[5]);
+	tmpaddr.s_addr = common_session_tbl_id->src_ip;
+	printf("src_ip:%s\n",	  inet_ntoa(tmpaddr));
+	printf("src_port:%d\n",	  ntohs(common_session_tbl_id->src_port));
+	
+
+	printf("src_mac:%.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n", 
+		common_session_tbl_id->dst_mac[0], common_session_tbl_id->dst_mac[1],
+		common_session_tbl_id->dst_mac[2], common_session_tbl_id->dst_mac[3],
+		common_session_tbl_id->dst_mac[4], common_session_tbl_id->dst_mac[5]);
+	tmpaddr.s_addr = common_session_tbl_id->dst_ip;
+	printf("dst_ip:%s\n",	  inet_ntoa(tmpaddr));
+	printf("dst_port:%d\n",	  ntohs(common_session_tbl_id->dst_port));
+
+
+	tmptime = localtime(&(common_session_tbl_id->start_time.tv_sec));
+	strftime(start_time, TIME_STR_SIZE+1, "%Y-%m-%d %H:%M:%S", tmptime);
+	printf("start_time:%s\n", start_time);  /* the start time */
+
+
+	tmptime = localtime(&(common_session_tbl_id->end_time.tv_sec));
+	strftime(end_time, TIME_STR_SIZE+1, "%Y-%m-%d %H:%M:%S", tmptime);
+	printf("end_time:%s\n", end_time);	/* the end time */
+
+
+	printf("login user:%s\n", common_session_tbl_id->login_user);
+	printf("pgt_len:%lu\n"  , common_session_tbl_id->pgt_len);
+	printf("pgt_num:%lu\n"  , common_session_tbl_id->pgt_num);
+	printf("pgt_flux:%f\n"  , common_session_tbl_id->pgt_flux);
+	
+	printf("\n**************** session ******************\n\n");
+#endif /* _DEBUG */
+		
+	tmpaddr.s_addr = common_session_tbl_id->src_ip;
+	sprintf(src_ip, "%s", inet_ntoa(tmpaddr));
+	tmpaddr.s_addr = common_session_tbl_id->dst_ip;
+	sprintf(dst_ip, "%s", inet_ntoa(tmpaddr));
+
+	sprintf(src_mac, "%.2X-%.2X-%.2X-%.2X-%.2X-%.2X", 
+			common_session_tbl_id->src_mac[0], common_session_tbl_id->src_mac[1],
+			common_session_tbl_id->src_mac[2], common_session_tbl_id->src_mac[3],
+			common_session_tbl_id->src_mac[4], common_session_tbl_id->src_mac[5]);
+
+	sprintf(dst_mac, "%.2X-%.2X-%.2X-%.2X-%.2X-%.2X", 
+			common_session_tbl_id->dst_mac[0], common_session_tbl_id->dst_mac[1],
+			common_session_tbl_id->dst_mac[2], common_session_tbl_id->dst_mac[3],
+			common_session_tbl_id->dst_mac[4], common_session_tbl_id->dst_mac[5]);
+	
+
+	get_time(start_time, common_session_tbl_id->start_time);
+	get_time(end_time,   common_session_tbl_id->end_time);
+
+
+	sprintf(sqlstr,"INSERT INTO \"public\".ea_session_%s_%s(session_id, 	\
+		data_id, protected_res_no, protected_res_content, p_type_id,	\
+		src_ip, src_port, src_mac, src_usrid, src_usrname, dst_ip,	\
+		dst_port, dst_mac, rule_name, start_time, end_time, login_usr, 	\
+		pgt_len, pgt_num, pgt_flux, authorize_flag, eaudit_info_state) 	\
+		values(%lu, %lu,%lu, '%s',%d, '%s', %d, '%s', %d, '%s','%s',%d,	\
+		'%s', '%s', '%s', '%s', '%s', %lu, %lu, %f, %d, %d)",		\
+		protocol, cur_date, common_session_tbl_id->session_id,		\
+		common_session_tbl_id->data_session_id,				\
+		common_session_tbl_id->protected_res_no,			\
+		common_session_tbl_id->protected_res_content,			\
+		common_session_tbl_id->pro_type_id,				\
+		src_ip, ntohs(common_session_tbl_id->src_port), src_mac,	\
+		common_session_tbl_id->src_usrid,				\
+		common_session_tbl_id->src_usrname,				\
+		dst_ip, ntohs(common_session_tbl_id->dst_port), dst_mac,	\
+		common_session_tbl_id->protected_res_name,			\
+		start_time, end_time, common_session_tbl_id->login_user,	\
+		common_session_tbl_id->pgt_len,					\
+		common_session_tbl_id->pgt_num,					\
+		common_session_tbl_id->pgt_flux,				\
+		common_session_tbl_id->authorize_flag,				\
+		common_session_tbl_id->eaudit_info_state);
+
+
+       EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+       if (sqlca.sqlcode < 0) {
+
+		if(sqlca.sqlcode == -220||sqlca.sqlcode == -221||sqlca.sqlcode == -402) {
+
+			PQfinish(g_data_conn);
+			EXEC SQL DISCONNECT;
+			connect_db(&g_data_conn, db_cfg_info.ip, 		\
+				   db_cfg_info.port, db_cfg_info.db,		\
+				   db_cfg_info.usr_name, db_cfg_info.password);
+		} else	EXEC SQL ROLLBACK;
+
+ 		DEBUG("%s", sqlstr);
+		fprintf(stderr, "write_common_session_into_db1:%ld %s\n",	\
+			sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+
+		return ESQL_ERR;
+
+	} else {
+
+		EXEC SQL COMMIT;
+		if(sqlca.sqlcode < 0) {
+
+			if(sqlca.sqlcode == -220||sqlca.sqlcode == -221||sqlca.sqlcode == -402) {
+
+				PQfinish(g_data_conn);
+				EXEC SQL DISCONNECT;
+				connect_db(&g_data_conn, db_cfg_info.ip, 	\
+					db_cfg_info.port, db_cfg_info.db,	\
+					db_cfg_info.usr_name, db_cfg_info.password);
+
+			} else	EXEC SQL ROLLBACK;
+			
+			fprintf(stderr, "write_common_session_into_db2:%ld %s\n",
+				sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+			return ESQL_ERR;
+		}
+	}
+
+	return TRUE;
+}
+
+
+	int
+write_log_into_db(
+	EA_LOG_TBL_ID log_tbl_id,
+	char*	      cur_date
+	)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char  sqlstr[2048];	
+	EXEC SQL END DECLARE SECTION;
+	
+	char	 log_time[TIME_STR_SIZE+1];
+	struct	 tm* tmptime;
+	
+	get_time(log_time, log_tbl_id->logdate_time);
+
+	sprintf(sqlstr,"INSERT INTO ea_log_system_%s(\
+		logdate_time, log_details, model_name, p_type_id, operate_type)	\
+		values ('%s', '%s', '%s', %d, '%s')", cur_date, log_time, 	\
+		log_tbl_id->logdetail, log_tbl_id->model_name,			\
+		log_tbl_id->p_type_id, log_tbl_id->operater_type);
+
+	EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+	if (sqlca.sqlcode < 0) {
+
+		if(sqlca.sqlcode == -220||sqlca.sqlcode == -221||sqlca.sqlcode == -402) {
+
+			PQfinish(g_data_conn);
+			EXEC SQL DISCONNECT;
+			connect_db(&g_data_conn, db_cfg_info.ip,		\
+				db_cfg_info.port, db_cfg_info.db, 		\
+				db_cfg_info.usr_name, db_cfg_info.password);
+
+		} else	EXEC SQL ROLLBACK;
+	
+		DEBUG("%s", sqlstr);
+		fprintf(stderr, "write_log_into_db1%ld %s\n",			\
+			sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+		return ESQL_ERR;
+
+	} else {
+
+		EXEC SQL COMMIT;
+		if(sqlca.sqlcode < 0) {
+
+			if(sqlca.sqlcode == -220||sqlca.sqlcode == -221||sqlca.sqlcode == -402) {
+
+				PQfinish(g_data_conn);
+				EXEC SQL DISCONNECT;
+				connect_db(&g_data_conn, db_cfg_info.ip,	\
+					db_cfg_info.port, db_cfg_info.db,	\
+					db_cfg_info.usr_name, db_cfg_info.password);
+
+			} else	EXEC SQL ROLLBACK;
+		
+			fprintf(stderr, "write_log_into_db2:%ld %s\n",		\
+				sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+			return ESQL_ERR;
+		}
+	}
+
+	return TRUE;
+}
+
+
+	int
+write_alarm_into_db(
+	EA_AlARM_TBL_ID alarm_tbl_id,
+	char*		cur_date
+	)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char sqlstr[2048];	
+	EXEC SQL END DECLARE SECTION;
+	
+	char src_ip[MAX_STR_IP_LEN+1];
+	char dst_ip[MAX_STR_IP_LEN+1];
+
+	char src_mac[MAX_STR_MAC_LEN+1];
+	char dst_mac[MAX_STR_MAC_LEN+1];
+
+	char alarm_time[TIME_STR_SIZE+1];
+	struct tm* tmptime;
+
+	struct in_addr tmpaddr;
+
+	sprintf(src_mac, "%.2X%.2X%.2X%.2X%.2X%.2X",				\
+		alarm_tbl_id->src_mac[0], alarm_tbl_id->src_mac[1],		\
+		alarm_tbl_id->src_mac[2], alarm_tbl_id->src_mac[3],		\
+		alarm_tbl_id->src_mac[4], alarm_tbl_id->src_mac[5]);
+
+	sprintf(dst_mac, "%.2X%.2X%.2X%.2X%.2X%.2X",				\
+		alarm_tbl_id->dst_mac[0], alarm_tbl_id->dst_mac[1],		\
+		alarm_tbl_id->dst_mac[2], alarm_tbl_id->dst_mac[3],		\
+		alarm_tbl_id->dst_mac[4], alarm_tbl_id->dst_mac[5]);
+
+	tmpaddr.s_addr = alarm_tbl_id->src_ip;
+	sprintf(src_ip, "%s", inet_ntoa(tmpaddr));
+	tmpaddr.s_addr = alarm_tbl_id->dst_ip;
+	sprintf(dst_ip, "%s", inet_ntoa(tmpaddr));
+	
+	get_time(alarm_time, alarm_tbl_id->alarm_date);
+
+	sprintf(sqlstr,"INSERT INTO ea_alarm_system_%s(p_type_id, model_name, 	\
+			src_mac, src_ip, dst_mac, dst_ip, src_usrname, usr_id, 	\
+			alarm_date, description, sys_name) values (%d, '%s', 	\
+			'%s','%s','%s', '%s', '%s', %d,'%s', '%s', '%s')",	\
+			cur_date, alarm_tbl_id->p_type_id,alarm_tbl_id->model_name,
+			src_mac, src_ip, dst_mac, dst_ip, alarm_tbl_id->src_username,
+			alarm_tbl_id->usr_id, alarm_time, alarm_tbl_id->description, "SNAM");
+
+	EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+	if (sqlca.sqlcode < 0) {
+
+		if(sqlca.sqlcode == -220||sqlca.sqlcode == -221||sqlca.sqlcode == -402) {
+
+			PQfinish(g_data_conn);
+			EXEC SQL DISCONNECT;
+			connect_db(&g_data_conn, db_cfg_info.ip,		\
+				db_cfg_info.port, db_cfg_info.db,		\
+				db_cfg_info.usr_name, db_cfg_info.password);
+
+		} else	EXEC SQL ROLLBACK;
+		
+		fprintf(stderr, "write_alarm_into_db1%ld %s\n",			\
+			sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+
+		return ESQL_ERR;
+	} else {
+
+		EXEC SQL COMMIT;
+		if(sqlca.sqlcode < 0) {
+
+			if(sqlca.sqlcode == -220||sqlca.sqlcode == -221||sqlca.sqlcode == -402) {
+
+				PQfinish(g_data_conn);
+				EXEC SQL DISCONNECT;
+				connect_db(&g_data_conn, db_cfg_info.ip,	\
+					db_cfg_info.port, db_cfg_info.db,	\
+					db_cfg_info.usr_name, db_cfg_info.password);
+
+			} else  EXEC SQL ROLLBACK;
+		
+			fprintf(stderr, "write_alarm_into_db2:%ld %s\n",	\
+				sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+
+			return ESQL_ERR;
+		}
+	}
+
+	return TRUE;
+}

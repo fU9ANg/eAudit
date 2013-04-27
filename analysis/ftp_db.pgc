@@ -1,0 +1,1187 @@
+/*
+ *  Author: fU9ANg
+ *  E-mail: bb.newlife@gmail.com
+ *
+ *  Written 2009
+ */
+
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <string.h>
+#include <time.h>
+#include <stdio.h>
+#include <sys/time.h>
+#include <unistd.h>
+
+EXEC SQL INCLUDE sqlca;
+
+#include "analyze_interface.h"
+#include "analyze_db.h"
+#include "analyze_debug.h"
+#include "analyze_common.h"
+
+#include "ftp_analyze_db.h"
+#include "ftp_analyze_global.h"
+#include "eAudit_sendtcp.h"
+
+/*
+
+/**********************************
+*func name:main
+*function:
+*parameters:
+*call:
+*called:
+*return:
+*/
+
+void force_sessions_into_db() {
+
+	unsigned long  i;
+	unsigned long  session_sum;
+	struct in_addr dst_addr;
+
+	time_t	       t;
+	struct timeval curtime;
+
+	EA_DATA_SESSION_TBL_ID  data_session_tbl_id;
+	EA_EVENT_AUTH_TBL	event_auth_tbl;
+	EA_RECORD_FILE_TBL	record_file_tbl;
+
+	if(is_next_day(&g_old_time) == FALSE)	return;
+
+	time(&t);
+	g_old_time = *localtime(&t);	
+	
+	gettimeofday(&curtime, NULL);
+	
+	session_sum = g_session_tbl_sum; /* the sum of session */
+
+	for(i = 0; i < g_max_supported_session; i++) {
+		if(g_session_tbl_id[i].flag == EXIST_ENTRY) {
+
+			g_session_pos = g_session_tbl_id  + i;
+			if(g_session_tbl_id[i].login_flag == 1) {
+				/* set event_auth_tbl */
+				event_auth_tbl.session_id = 			\
+					g_session_tbl_id[i].session_id;
+				event_auth_tbl.event_seq  =			\
+					g_session_tbl_id[i].detail_tbl.event_seq;
+				event_auth_tbl.p_type_id  = PRO_TYPE_FTP;
+				event_auth_tbl.event_type = EVENT_LOGOUT;
+				event_auth_tbl.result	  = RESULT_SUCCESS;
+				event_auth_tbl.event_time = curtime;
+				event_auth_tbl.analysis_start = -1;
+				event_auth_tbl.analysis_end   = -1;
+				strcpy(event_auth_tbl.user_name, 
+					g_session_pos->detail_tbl.login_user);
+				event_auth_tbl.object_name[0] = '\0';
+
+				dst_addr.s_addr = g_session_tbl_id[i].dst_ip;
+				sprintf(event_auth_tbl.event_des,		\
+				"Ê¹ÓÃÕËºÅ%sµÇÂŒ%sµÄFTP·þÎñÆ÷µÄÓÃ»§%sÍË³ö",	\
+				event_auth_tbl.user_name, inet_ntoa(dst_addr),	\
+				g_session_tbl_id[i].usr_info.src_usrname);		
+
+				/* write to db */
+				write_event_auth_db_tbl(&event_auth_tbl, "ftp");
+				g_session_tbl_id[i].login_flag = 0;
+			}
+
+			if(g_session_tbl_id[i].data_flag == 1)
+				write_session_into_db(&g_session_tbl_id[i]);
+
+			/* set g_session_tbl_id */
+			g_session_tbl_id[i].pgt_len  = 0;
+			g_session_tbl_id[i].pgt_num  = 0;
+			g_session_tbl_id[i].ts_start = curtime;
+			g_session_tbl_id[i].ts_start.tv_sec++;
+			g_session_tbl_id[i].ts_end   = 				\
+				g_session_tbl_id[i].ts_start;
+			g_session_tbl_id[i].ts_last  =				\
+				g_session_tbl_id[i].ts_start.tv_sec;
+
+			data_session_tbl_id	     = &g_session_pos->data_session_tbl;
+
+			if(g_session_tbl_id[i].detail_tbl.fd >= 0) {
+				close(g_session_tbl_id[i].detail_tbl.fd);
+				g_session_tbl_id[i].detail_tbl.fd = -1;
+
+				/* set record_file_tbl */
+				record_file_tbl.session_id= 			\
+					g_session_pos->session_id;
+				record_file_tbl.file_no   = 			\
+					g_session_pos->detail_tbl.file_no++;
+				record_file_tbl.p_type_id = PRO_TYPE_FTP;
+				record_file_tbl.start_time= 			\
+					data_session_tbl_id->ts_start;
+				record_file_tbl.end_time  = 			\
+					data_session_tbl_id->ts_end;
+				strcpy(record_file_tbl.file_name,		\
+					g_session_pos->detail_tbl.file_name);
+				strcpy(record_file_tbl.file_suffix,		\
+					g_session_pos->detail_tbl.file_suffix);
+
+				record_file_tbl.real_size =			\
+					data_session_tbl_id->data_len;
+				record_file_tbl.nego_size =			\
+					g_session_pos->detail_tbl.file_size;
+				record_file_tbl.result = RESULT_SUCCESS;
+				strcpy(record_file_tbl.save_path,		\
+					g_session_pos->detail_tbl.save_path);
+
+				/* write */
+				write_record_file_db_tbl(&record_file_tbl);
+			}
+		}
+
+		if(--session_sum <= 0) break;
+
+	} /* fi */
+
+	get_current_date(g_cur_date, 32);
+}
+
+
+void write_abnormal_session_into_db(char flag) {
+
+	EA_EVENT_AUTH_TBL	event_auth_tbl;
+	EA_DATA_SESSION_TBL_ID  data_session_tbl_id;
+	EA_RECORD_FILE_TBL	record_file_tbl;
+	unsigned long	session_sum = g_session_tbl_sum;
+	unsigned long	i;
+	struct in_addr	dst_addr;
+	
+	for(i = 0; i < g_max_supported_session; i++) {
+
+		if(g_session_tbl_id[i].flag == EXIST_ENTRY) {
+
+			if(!flag && g_pkt_basic_info.ts.tv_sec -		\
+			g_session_tbl_id[i].ts_last>g_interval_time)
+				flag = TRUE;
+
+			g_session_pos = g_session_tbl_id + i;
+			
+			if(flag) {
+
+				if(g_session_tbl_id[i].login_flag == 1) {
+
+					/* set event_auth_tbl */
+					event_auth_tbl.session_id     =		\
+					g_session_tbl_id[i].session_id;
+					event_auth_tbl.event_seq      =		\
+					g_session_tbl_id[i].detail_tbl.event_seq;
+					event_auth_tbl.p_type_id      = PRO_TYPE_FTP;
+					event_auth_tbl.event_type     = EVENT_LOGOUT;
+					event_auth_tbl.result         = RESULT_SUCCESS;
+					event_auth_tbl.event_time     =		\
+					g_session_tbl_id[i].detail_tbl.cur_cmd_time;
+					event_auth_tbl.analysis_start =		\
+					g_session_tbl_id[i].detail_tbl.cur_analysis_index;
+					event_auth_tbl.analysis_end   =		\
+					g_session_tbl_id[i].detail_tbl.cur_analysis_index;
+					strcpy(event_auth_tbl.user_name,	\
+					g_session_tbl_id[i].detail_tbl.login_user);
+
+					event_auth_tbl.object_name[0] = '\0';	
+					
+					dst_addr.s_addr = g_session_tbl_id[i].dst_ip;
+					sprintf(event_auth_tbl.event_des,	\
+					"Ê¹ÓÃÕËºÅ%sµÇÂŒ%sµÄFTP·þÎñÆ÷µÄÓÃ»§%sÍË³ö",
+					event_auth_tbl.user_name,		\
+					inet_ntoa(dst_addr),			\
+					g_session_tbl_id[i].usr_info.src_usrname);		
+
+					/* write to db */
+					write_event_auth_db_tbl(&event_auth_tbl, "ftp");
+					g_session_tbl_id[i].login_flag = 0;
+				}
+
+				if(g_session_tbl_id[i].data_flag == 1)
+					write_session_into_db(&g_session_tbl_id[i]);
+
+				data_session_tbl_id = &g_session_tbl_id[i].data_session_tbl;
+				if(g_session_tbl_id[i].detail_tbl.fd >=0) {
+
+					close(g_session_tbl_id[i].detail_tbl.fd);
+					g_session_tbl_id[i].detail_tbl.fd  = -1;
+					record_file_tbl.session_id    =		\
+						g_session_tbl_id[i].session_id;
+					record_file_tbl.file_no       =		\
+						g_session_tbl_id[i].detail_tbl.file_no++;
+					record_file_tbl.p_type_id     = PRO_TYPE_FTP;
+					record_file_tbl.start_time    =		\
+						data_session_tbl_id->ts_start;
+					record_file_tbl.end_time      = 	\
+						data_session_tbl_id->ts_end;
+
+					strcpy(record_file_tbl.file_name,	\
+						g_session_tbl_id[i].detail_tbl.file_name);
+					strcpy(record_file_tbl.file_suffix,	\
+						g_session_tbl_id[i].detail_tbl.file_suffix);
+					record_file_tbl.real_size     =		\
+						data_session_tbl_id->data_len;
+					record_file_tbl.nego_size     =		\
+						g_session_tbl_id[i].detail_tbl.file_size;
+					record_file_tbl.result        = RESULT_SUCCESS;
+
+					strcpy(record_file_tbl.save_path,	\
+						g_session_tbl_id[i].detail_tbl.save_path);
+
+					/* write */
+					write_record_file_db_tbl(&record_file_tbl);
+				}
+				
+				g_session_tbl_sum--;
+				memset(&g_session_tbl_id[i], 0x00, EA_SESSION_TBL_SIZE);
+
+			} else if (g_session_tbl_id[i].data_session_tbl.flag == EXIST_ENTRY && g_pkt_basic_info.ts.tv_sec - g_session_tbl_id[i].data_session_tbl.ts_last > g_data_interval_time)
+			{
+				data_session_tbl_id = &g_session_tbl_id[i].data_session_tbl;
+				if(g_session_tbl_id[i].detail_tbl.fd >=0)
+				{
+					close(g_session_tbl_id[i].detail_tbl.fd);
+					g_session_tbl_id[i].detail_tbl.fd = -1;
+					record_file_tbl.session_id    =		\
+						g_session_tbl_id[i].session_id;
+					record_file_tbl.file_no       =		\
+						g_session_tbl_id[i].detail_tbl.file_no++;
+					record_file_tbl.p_type_id     = PRO_TYPE_FTP;
+					record_file_tbl.start_time    =		\
+						data_session_tbl_id->ts_start;
+					record_file_tbl.end_time      =		\
+						data_session_tbl_id->ts_end;
+					strcpy(record_file_tbl.file_name,	\
+						g_session_tbl_id[i].detail_tbl.file_name);
+					strcpy(record_file_tbl.file_suffix,	\
+						g_session_tbl_id[i].detail_tbl.file_suffix);
+					record_file_tbl.real_size     =		\
+						data_session_tbl_id->data_len;
+					record_file_tbl.nego_size     =		\
+						g_session_tbl_id[i].detail_tbl.file_size;
+					record_file_tbl.result        = RESULT_SUCCESS;
+					strcpy(record_file_tbl.save_path,	\
+						g_session_tbl_id[i].detail_tbl.save_path);
+
+					/* write */
+					write_record_file_db_tbl(&record_file_tbl);
+					memset(data_session_tbl_id, 0x00, EA_DATA_SESSION_TBL_SIZE);
+				}
+			}
+
+		}
+		if(--session_sum <= 0) break;
+	}
+}
+
+
+int write_session_into_db(EA_SESSION_TBL_ID session_tbl_id)
+{
+	EA_COMMON_SESSION_TBL common_session_tbl;
+	unsigned long interval;
+
+	if((g_session_pos->eaudit_authorize_info.eaudit_info&0x01)==0x00)
+		return ESQL_OK;
+
+	common_session_tbl.session_id = session_tbl_id->session_id;
+	common_session_tbl.data_session_id = 0;
+	common_session_tbl.protected_res_no = session_tbl_id->protected_res_no;
+	strcpy(common_session_tbl.protected_res_content, session_tbl_id->protected_res_content);
+	strcpy(common_session_tbl.protected_res_name, session_tbl_id->protected_res_name);
+	common_session_tbl.pro_type_id = session_tbl_id->pro_type_id;
+	common_session_tbl.src_ip = session_tbl_id->src_ip;
+	common_session_tbl.src_port = session_tbl_id->src_port;
+	memcpy(common_session_tbl.src_mac, session_tbl_id->src_mac, MAC_ADDRESS_SIZE);
+	common_session_tbl.src_usrid = session_tbl_id->usr_info.src_usrid;
+	strcpy(common_session_tbl.src_usrname, session_tbl_id->usr_info.src_usrname);
+	common_session_tbl.dst_ip = session_tbl_id->dst_ip;
+	common_session_tbl.dst_port = session_tbl_id->dst_port;
+	memcpy(common_session_tbl.dst_mac, session_tbl_id->dst_mac, MAC_ADDRESS_SIZE);
+	common_session_tbl.start_time = session_tbl_id->ts_start;
+	common_session_tbl.end_time = session_tbl_id->ts_end;
+	common_session_tbl.session_state = NORMAL_INTO_DB;
+	strcpy(common_session_tbl.login_user, session_tbl_id->detail_tbl.login_user);
+	common_session_tbl.risk_level = session_tbl_id->risk_level;
+	common_session_tbl.pgt_len = session_tbl_id->pgt_len;
+	common_session_tbl.pgt_num = session_tbl_id->pgt_num;
+	interval = common_session_tbl.end_time.tv_sec - common_session_tbl.start_time.tv_sec;
+
+	if(interval > 0)
+		common_session_tbl.pgt_flux = (session_tbl_id->pgt_len) / interval;
+	else
+		common_session_tbl.pgt_flux = session_tbl_id->pgt_len;
+
+	common_session_tbl.authorize_flag = session_tbl_id->eaudit_authorize_info.authorize_info;
+	common_session_tbl.eaudit_info_state = session_tbl_id->eaudit_authorize_info.eaudit_info;
+
+	/* write */
+	write_common_session_into_db(&common_session_tbl, g_session_pos->g_cur_date, "ftp");
+	
+	return TRUE;
+}
+
+int write_record_file_db_tbl(EA_RECORD_FILE_TBL_ID record_file_tbl_id)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char sqlstr[2048];	
+	EXEC SQL END DECLARE SECTION;
+	
+	struct  tm*  tmptime;
+	
+	char start_time[TIME_STR_SIZE+1];
+	char end_time  [TIME_STR_SIZE+1];
+
+	if((g_session_pos->eaudit_authorize_info.eaudit_info &0x02)==0x00)
+		return ESQL_OK;
+	
+	get_time(start_time, record_file_tbl_id->start_time);
+	get_time(end_time,   record_file_tbl_id->end_time  );
+
+	sprintf(sqlstr,"INSERT INTO ea_record_ftp_%s (session_id, record_id,	\
+			p_type_id, start_time, end_time, file_name, file_size,	\
+			nego_size, event_result) values (%lu, %d, %d, '%s', 	\
+			'%s', '%s', %ld, %ld, %d)", g_session_pos->g_cur_date,	\
+			record_file_tbl_id->session_id,				\
+			record_file_tbl_id->file_no,				\
+			record_file_tbl_id->p_type_id,				\
+			start_time, end_time,					\
+			record_file_tbl_id->file_name,				\
+			record_file_tbl_id->real_size,				\
+			record_file_tbl_id->nego_size,				\
+			record_file_tbl_id->result);
+
+//	printf("%s\n", sqlstr);
+	EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+	if (sqlca.sqlcode < 0) {
+
+		if(sqlca.sqlcode == -220||sqlca.sqlcode == -221||sqlca.sqlcode == -402)
+		{
+			PQfinish(g_data_conn);
+			EXEC SQL DISCONNECT;
+			connect_db(&g_data_conn, db_cfg_info.ip,		\
+				db_cfg_info.port, db_cfg_info.db,		\
+				db_cfg_info.usr_name, db_cfg_info.password);
+
+		} else	EXEC SQL ROLLBACK;
+		   
+	    	fprintf(stderr, "write_record_file_db_tbl1:%ld %s\n",		\
+			sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+
+	return ESQL_ERR;
+
+	} else {
+		EXEC SQL COMMIT;
+        	if(sqlca.sqlcode < 0) {
+
+			if(sqlca.sqlcode == -220||sqlca.sqlcode == -221||sqlca.sqlcode == -402)
+			{
+				PQfinish(g_data_conn);
+				EXEC SQL DISCONNECT;
+				connect_db(&g_data_conn, db_cfg_info.ip,	\
+					db_cfg_info.port, db_cfg_info.db,	\
+					db_cfg_info.usr_name, db_cfg_info.password);
+
+			} else	EXEC SQL ROLLBACK;
+				
+			fprintf(stderr, "write_record_file_db_tbl2:%ld %s\n",	\
+				sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc );
+
+			return(ESQL_ERR);
+           	}
+        } /* fi */
+
+	return(TRUE);
+}
+
+
+int write_record_data_file_db_tbl(EA_RECORD_DATA_FILE_TBL_ID record_data_file_tbl_id, int record_data_len)
+{
+	const char *paramValues[1];
+	int paramFormats;
+	PGresult   *res = NULL;
+
+	char sqlstr[2048];	
+	if((g_session_pos->eaudit_authorize_info.eaudit_info&0x02) == 0x00)
+	{
+		return ESQL_OK;
+	}	
+	
+	paramValues[0] = record_data_file_tbl_id->save_content;
+ 	paramFormats = 1;
+
+	sprintf(sqlstr,"INSERT INTO ea_record_data_ftp_%s (session_id, record_id, file_neaf_id, save_content) \
+		values (%lu, %d, %d, $1)", g_session_pos->g_cur_date,\
+		record_data_file_tbl_id->session_id, record_data_file_tbl_id->record_id, record_data_file_tbl_id->file_neaf_id);
+
+	res = PQexecParams(g_data_conn, sqlstr, 1, NULL,  paramValues, &record_data_len, (const int *) &paramFormats, 1);
+
+	if (PQresultStatus(res) != PGRES_COMMAND_OK)
+	{
+		fprintf(stderr, "write_record_data_file_db_tbl failed: %s", PQerrorMessage(g_data_conn));
+		PQclear(res);
+
+		PQfinish(g_data_conn);
+		EXEC SQL DISCONNECT;
+		connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+		
+		return ESQL_ERR;
+	}
+	PQclear(res);
+	
+	return ESQL_OK;
+}
+
+
+int write_event_common_db_tbl(EA_EVENT_COMMON_TBL_ID event_common_tbl_id)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char sqlstr[2048];	
+	EXEC SQL END DECLARE SECTION;
+	
+	struct tm* tmptime;
+	
+	char event_time[TIME_STR_SIZE+1];
+
+	get_time(event_time, event_common_tbl_id->event_time);
+
+	
+	sprintf(sqlstr,"INSERT INTO ea_%s_event (session_id, event_id, p_type_id, \
+		event_type, event_result, event_time, event_des) \
+		values (%lu, %d, %d, %d, %d, '%s', '%s')", g_session_pos->g_cur_date,\
+		event_common_tbl_id->session_id, event_common_tbl_id->event_seq, event_common_tbl_id->p_type_id, \
+		event_common_tbl_id->event_type, event_common_tbl_id->result, event_time, event_common_tbl_id->event_des);
+
+//	printf("%s\n", sqlstr);
+	EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+       if (sqlca.sqlcode < 0)
+       {
+		   if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+		   {
+			   PQfinish(g_data_conn);
+			   EXEC SQL DISCONNECT;
+			   connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+		   }
+		   else
+			   EXEC SQL ROLLBACK;
+		   
+	    	fprintf(stderr, "write_event_common_db_tbl1:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+      	 	return ESQL_ERR;
+       }
+       else
+       {
+      	 	EXEC SQL COMMIT;
+        	if(sqlca.sqlcode < 0)
+        	{
+				if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+				{
+					PQfinish(g_data_conn);
+					EXEC SQL DISCONNECT;
+					connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+				}
+				else
+					EXEC SQL ROLLBACK;
+				
+				fprintf(stderr, "write_event_common_db_tbl2:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+				return ESQL_ERR;
+           	}
+        }	
+
+	return TRUE;
+}
+
+
+int write_event_auth_db_tbl(EA_EVENT_AUTH_TBL_ID event_auth_tbl_id, char* protocol)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char sqlstr[2048];	
+	EXEC SQL END DECLARE SECTION;
+
+	struct  tm*  tmptime;
+	
+	char    event_time[TIME_STR_SIZE+1];
+	char*   login_str = "login";
+	char*   logout_str = "logout";
+	char*   auth_type = NULL;
+
+	if((g_session_pos->eaudit_authorize_info.eaudit_info&0x04) == 0x00)
+	{
+		return ESQL_OK;
+	}	
+
+	get_time(event_time, event_auth_tbl_id->event_time);
+
+
+	if(event_auth_tbl_id->event_type == EVENT_LOGIN)
+	{
+		auth_type = login_str;
+	}else
+	{
+		auth_type = logout_str;
+	}
+	
+	sprintf(sqlstr,"INSERT INTO ea_event_%s_%s_%s (session_id, event_id, p_type_id, \
+		e_type_id, event_result, event_time, detail_start_id, detail_end_id, user_name, event_des) \
+		values (%lu, %d, %d, %d, %d, '%s', %d, %d, '%s', '%s')", auth_type, protocol, g_session_pos->g_cur_date, \
+		event_auth_tbl_id->session_id, event_auth_tbl_id->event_seq, event_auth_tbl_id->p_type_id, \
+		event_auth_tbl_id->event_type, event_auth_tbl_id->result, event_time, event_auth_tbl_id->analysis_start, \
+		event_auth_tbl_id->analysis_end, event_auth_tbl_id->user_name, event_auth_tbl_id->event_des);
+	
+	EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+       if (sqlca.sqlcode < 0)
+       {
+		   if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+		   {
+			   PQfinish(g_data_conn);
+			   EXEC SQL DISCONNECT;
+			   connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+		   }
+		   else
+			   EXEC SQL ROLLBACK;
+		   
+	    	fprintf(stderr, "write_event_auth_db_tbl1:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+	       	return ESQL_ERR;
+       }
+	   else
+       {
+	       	EXEC SQL COMMIT;
+        	if(sqlca.sqlcode < 0)
+        	{	
+				if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+				{
+					PQfinish(g_data_conn);
+					EXEC SQL DISCONNECT;
+					connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+				}
+				else
+					EXEC SQL ROLLBACK;
+				
+				fprintf(stderr, "write_event_auth_db_tbl2:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+				return ESQL_ERR;
+           	}
+        }	
+	return TRUE;	
+}
+
+int write_event_remove_db_tbl(EA_EVENT_REMOVE_TBL_ID ea_event_remove_tbl_id)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char sqlstr[2048];	
+	EXEC SQL END DECLARE SECTION;
+
+	struct  tm*  tmptime;
+	char    event_time[TIME_STR_SIZE+1];
+
+	if((g_session_pos->eaudit_authorize_info.eaudit_info&0x04)==0x00)
+		return ESQL_OK;	
+	
+	get_time(event_time, ea_event_remove_tbl_id->event_time);
+
+	sprintf(sqlstr,"INSERT INTO ea_event_remove_ftp_%s (session_id, event_id, p_type_id, \
+		e_type_id, event_result, event_time, detail_start_id, detail_end_id, object_name, event_des) \
+		values (%lu, %d, %d, %d, %d, '%s', %d, %d, '%s', '%s')", g_session_pos->g_cur_date,\
+		ea_event_remove_tbl_id->session_id, ea_event_remove_tbl_id->event_seq, ea_event_remove_tbl_id->p_type_id, \
+		ea_event_remove_tbl_id->event_type, ea_event_remove_tbl_id->result, event_time, ea_event_remove_tbl_id->analysis_start, \
+		ea_event_remove_tbl_id->analysis_end, ea_event_remove_tbl_id->object_name, ea_event_remove_tbl_id->event_des);
+	
+	EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+       if (sqlca.sqlcode < 0)
+       {
+		   if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+		   {
+			   PQfinish(g_data_conn);
+			   EXEC SQL DISCONNECT;
+			   connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+		   }
+		   else
+			   EXEC SQL ROLLBACK;
+		   
+	    	fprintf(stderr, "write_event_remove_db_tbl1:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+     	  	return ESQL_ERR;
+       }
+       else
+       {
+      	 	EXEC SQL COMMIT;
+        	if(sqlca.sqlcode < 0)
+        	{
+				if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+				{
+					PQfinish(g_data_conn);
+					EXEC SQL DISCONNECT;
+					connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+				}
+				else
+					EXEC SQL ROLLBACK;
+				
+
+				fprintf(stderr, "write_event_remove_db_tbl2:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+				return ESQL_ERR;
+           	}
+        }	
+	return TRUE;	
+
+}
+
+int write_event_rename_db_tbl(EA_EVENT_RENAME_TBL_ID ea_event_rename_tbl_id)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char sqlstr[2048];	
+	EXEC SQL END DECLARE SECTION;
+
+	struct tm* tmptime;
+	
+	char event_time[TIME_STR_SIZE+1];
+	if((g_session_pos->eaudit_authorize_info.eaudit_info&0x04) == 0x00)
+	{
+		return ESQL_OK;
+	}	
+	
+
+	get_time(event_time, ea_event_rename_tbl_id->event_time);
+
+
+
+	sprintf(sqlstr,"INSERT INTO ea_event_rename_ftp_%s (session_id, event_id, p_type_id, \
+		e_type_id, event_result, event_time, detail_start_id, detail_end_id, object_src, object_dst, event_des) \
+		values (%lu, %d, %d, %d, %d, '%s', %d, %d, '%s', '%s', '%s')", g_session_pos->g_cur_date,\
+		ea_event_rename_tbl_id->session_id, ea_event_rename_tbl_id->event_seq, ea_event_rename_tbl_id->p_type_id, \
+		ea_event_rename_tbl_id->event_type, ea_event_rename_tbl_id->result, event_time, ea_event_rename_tbl_id->analysis_start, \
+		ea_event_rename_tbl_id->analysis_end, ea_event_rename_tbl_id->object_src, ea_event_rename_tbl_id->object_dst, ea_event_rename_tbl_id->event_des);
+	
+	EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+       if (sqlca.sqlcode < 0)
+       {
+		   if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+		   {
+			   PQfinish(g_data_conn);
+			   EXEC SQL DISCONNECT;
+			   connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+		   }
+		   else
+			   EXEC SQL ROLLBACK;
+		   
+	    	fprintf(stderr, "write_event_rename_db_tbl1:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+    	   	return ESQL_ERR;
+       }
+       else
+       {
+  	     	EXEC SQL COMMIT;
+        	if(sqlca.sqlcode < 0)
+        	{
+				if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+				{
+					PQfinish(g_data_conn);
+					EXEC SQL DISCONNECT;
+					connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+				}
+				else
+					EXEC SQL ROLLBACK;
+				
+
+				fprintf(stderr, "write_event_rename_db_tbl2:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+				return ESQL_ERR;
+           	}
+        }	
+	return TRUE;	
+
+}
+
+
+int write_event_download_db_tbl(EA_EVENT_DOWNLOAD_TBL_ID ea_event_download_tbl_id)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char sqlstr[2048];	
+	EXEC SQL END DECLARE SECTION;
+
+	struct tm* tmptime;
+	
+	char event_time[TIME_STR_SIZE+1];
+	if((g_session_pos->eaudit_authorize_info.eaudit_info&0x04) == 0x00)
+	{
+		return ESQL_OK;
+	}	
+	
+
+	get_time(event_time, ea_event_download_tbl_id->event_time);
+
+
+	sprintf(sqlstr,"INSERT INTO ea_event_download_ftp_%s (session_id, event_id, p_type_id, \
+		e_type_id, event_result, event_time, detail_start_id, detail_end_id, object_src, object_size, event_des) \
+		values (%lu, %d, %d, %d, %d, '%s', %d, %d, '%s', %ld, '%s')", g_session_pos->g_cur_date,\
+		ea_event_download_tbl_id->session_id, ea_event_download_tbl_id->event_seq, ea_event_download_tbl_id->p_type_id, \
+		ea_event_download_tbl_id->event_type, ea_event_download_tbl_id->result, event_time, ea_event_download_tbl_id->analysis_start, \
+		ea_event_download_tbl_id->analysis_end, ea_event_download_tbl_id->object_src, \
+		ea_event_download_tbl_id->object_size, ea_event_download_tbl_id->event_des);
+
+//	printf("%s\n", sqlstr);
+	EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+       if (sqlca.sqlcode < 0)
+       {
+		   if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+		   {
+			   PQfinish(g_data_conn);
+			   EXEC SQL DISCONNECT;
+			   connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+		   }
+		   else
+			   EXEC SQL ROLLBACK;
+		   
+	    	fprintf(stderr, "write_event_download_db_tbl1:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+     	  	return ESQL_ERR;
+       }
+       else
+       {
+  	     	EXEC SQL COMMIT;
+        	if(sqlca.sqlcode < 0)
+        	{
+				if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+				{
+					PQfinish(g_data_conn);
+					EXEC SQL DISCONNECT;
+					connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+				}
+				else
+					EXEC SQL ROLLBACK;
+				
+				fprintf(stderr, "write_event_download_db_tbl2:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+				return ESQL_ERR;
+           	}
+        }	
+	return TRUE;	
+
+}
+
+
+int write_event_upload_db_tbl(EA_EVENT_UPLOAD_TBL_ID ea_event_upload_tbl_id)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char sqlstr[2048];	
+	EXEC SQL END DECLARE SECTION;
+
+	struct tm* tmptime;
+	
+	char event_time[TIME_STR_SIZE+1];
+	if((g_session_pos->eaudit_authorize_info.eaudit_info&0x04) == 0x00)
+	{
+		return ESQL_OK;
+	}
+	
+	get_time(event_time, ea_event_upload_tbl_id->event_time);
+
+	sprintf(sqlstr,"INSERT INTO ea_event_upload_ftp_%s (session_id, event_id, p_type_id, \
+		e_type_id, event_result, event_time, detail_start_id, detail_end_id, object_dst, object_size, event_des) \
+		values (%lu, %d, %d, %d, %d, '%s', %d, %d, '%s',%ld, '%s')", g_session_pos->g_cur_date,\
+		ea_event_upload_tbl_id->session_id, ea_event_upload_tbl_id->event_seq, ea_event_upload_tbl_id->p_type_id, \
+		ea_event_upload_tbl_id->event_type, ea_event_upload_tbl_id->result, event_time, ea_event_upload_tbl_id->analysis_start, \
+		ea_event_upload_tbl_id->analysis_end, ea_event_upload_tbl_id->object_dst,\
+		ea_event_upload_tbl_id->object_size, ea_event_upload_tbl_id->event_des);
+
+//	printf("%s\n", sqlstr);
+	EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+       if (sqlca.sqlcode < 0)
+       {
+		   if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+		   {
+			   PQfinish(g_data_conn);
+			   EXEC SQL DISCONNECT;
+			   connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+		   }
+		   else
+			   EXEC SQL ROLLBACK;
+		   
+	    	fprintf(stderr, "write_event_upload_db_tbl1:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+       	return ESQL_ERR;
+       }
+       else
+       {
+     	  	EXEC SQL COMMIT;
+        	if(sqlca.sqlcode < 0)
+        	{
+				if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+				{
+					PQfinish(g_data_conn);
+					EXEC SQL DISCONNECT;
+					connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+				}
+				else
+					EXEC SQL ROLLBACK;
+				
+
+				fprintf(stderr, "write_event_upload_db_tbl2:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+				return ESQL_ERR;
+           	}
+        }	
+	return TRUE;
+
+}
+
+
+int write_detail_ftp_db_tbl(EA_ANALYSIS_FTP_CMD_TBL_ID analysis_ftp_cmd_tbl_id)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char sqlstr[2048];	
+	EXEC SQL END DECLARE SECTION;
+
+	struct  tm*  tmptime;
+	
+	char request_time [TIME_STR_SIZE+1];
+	char response_time[TIME_STR_SIZE+1];
+
+	if((g_session_pos->eaudit_authorize_info.eaudit_info&0x08) == 0x00)
+	{
+		return ESQL_OK;
+	}
+	
+	get_time(request_time,  analysis_ftp_cmd_tbl_id->request_time );
+	get_time(response_time, analysis_ftp_cmd_tbl_id->response_time);
+
+
+
+	sprintf(sqlstr,"INSERT INTO ea_detail_ftp_%s (session_id, detail_record_id, record_time, \
+		response_time, cmd_name, cmd_no, cmd_param, res_info, cmd_chinese, p_type_id, event_id) \
+		values (%lu, %d, '%s', '%s', '%s', %d, '%s', '%s', '%s', %d, %d)", g_session_pos->g_cur_date,\
+		analysis_ftp_cmd_tbl_id->session_id, analysis_ftp_cmd_tbl_id->analysis_index, request_time,
+		response_time, analysis_ftp_cmd_tbl_id->cmd_name, analysis_ftp_cmd_tbl_id->cmd_no, analysis_ftp_cmd_tbl_id->cmd_param, \
+		analysis_ftp_cmd_tbl_id->res_info, analysis_ftp_cmd_tbl_id->cmd_chinese, PRO_TYPE_FTP, g_session_pos->detail_tbl.event_seq);
+//	printf("%s\n", sqlstr);
+	EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+	if (sqlca.sqlcode < 0)
+	{
+	   if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+	   {
+		   PQfinish(g_data_conn);
+		   EXEC SQL DISCONNECT;
+		   connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+	   }
+	   else
+		   EXEC SQL ROLLBACK;
+	   
+		fprintf(stderr, "write_analysis_ftp_cmd_db_tbl1:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+	}
+	else
+	{
+	   	EXEC SQL COMMIT;
+		if(sqlca.sqlcode < 0)
+		{
+			if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+			{
+				PQfinish(g_data_conn);
+				EXEC SQL DISCONNECT;
+				connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+			}
+			else
+				EXEC SQL ROLLBACK;
+
+			fprintf(stderr, "write_analysis_ftp_cmd_db_tbl2:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+	   	}
+	}	
+
+	if(analysis_ftp_cmd_tbl_id->cmd_param[0])  
+	{
+		memset(sqlstr, 0x00, strlen(sqlstr));
+		sprintf(sqlstr, "INSERT INTO ea_keyword_used_ftp_%s\
+		   (session_id, keyword_name, p_type_id, record_time, keyword_id)\
+		   values(%lu, '%s', %lu, '%s', %lu)",\
+		   g_session_pos->g_cur_date, analysis_ftp_cmd_tbl_id->session_id,\
+		   analysis_ftp_cmd_tbl_id->cmd_param, PRO_TYPE_FTP, request_time, 0);
+
+		   
+		   
+		EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+		if (sqlca.sqlcode < 0)
+		{
+		   if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+		   {
+			   PQfinish(g_data_conn);
+			   EXEC SQL DISCONNECT;
+			   connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+		   }
+		   else
+			   EXEC SQL ROLLBACK;
+		   
+			fprintf(stderr, "write_analysis_ftp_cmd_db_tbl1:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+		}
+		else
+		{
+		   	EXEC SQL COMMIT;
+			if(sqlca.sqlcode < 0)
+			{
+				if(sqlca.sqlcode == -220 || sqlca.sqlcode == -221 || sqlca.sqlcode == -402)
+				{
+					PQfinish(g_data_conn);
+					EXEC SQL DISCONNECT;
+					connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port, db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+				}
+				else
+					EXEC SQL ROLLBACK;
+
+				fprintf(stderr, "write_analysis_ftp_cmd_db_tbl2:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+		   	}
+		}		
+	}
+	return TRUE;	
+
+}
+
+
+	int
+write_detail_data_ftp_db_tbl(
+	EA_DETAIL_DIVIDE_ID detail_divide_id,
+	int		    detail_record_len
+	)
+{
+	const char *paramValues[1];
+	int	    paramFormats;
+	PGresult   *res = NULL;
+	char	    sqlstr[2048];
+
+	if((g_session_pos->eaudit_authorize_info.eaudit_info &0x08) ==0x00)
+		return ESQL_OK;
+	
+	paramValues[0] = detail_divide_id->detail_record_ptr;
+ 	paramFormats   = 1;
+
+	sprintf(sqlstr,"INSERT INTO ea_detail_data_ftp_%s (session_id,		\
+			detail_record_id, record_id, detail_record_data) values \
+			(%lu, %d, %d, $1)", g_session_pos->g_cur_date,		\
+			detail_divide_id->session_id,				\
+			detail_divide_id->analysis_index,			\
+			detail_divide_id->record_index);
+
+	res = PQexecParams(g_data_conn, sqlstr, 1, NULL,  paramValues,		\
+			&detail_record_len, (const int *) &paramFormats, 1);
+
+	if (PQresultStatus(res) != PGRES_COMMAND_OK)
+	{
+		fprintf(stderr, "write_detail_data_ftp_db_tbl failed: %s",	\
+			PQerrorMessage(g_data_conn));
+		PQclear(res);	
+
+		PQfinish(g_data_conn);
+		EXEC SQL DISCONNECT;
+		connect_db(&g_data_conn, db_cfg_info.ip, db_cfg_info.port,	\
+			db_cfg_info.db, db_cfg_info.usr_name, db_cfg_info.password);
+	
+		return ESQL_ERR;
+	}
+
+	PQclear(res);
+	
+	return ESQL_OK;
+}
+
+
+/* 此函数中太多的冗余代码 */
+	void
+handle_ultravires(
+	EA_SESSION_TBL_ID session_id,
+	char*		  operater_type,
+	char*		  log_detail,
+	char*		  description,
+	int		  flag
+	)
+{
+	EA_LOG_TBL   log_tbl;
+	EA_ALARM_TBL alarm_tbl;
+
+	if(flag == ACCOUNT) {
+
+		if(session_id->account.log) {
+
+			memset(&log_tbl, 0x00, EA_LOG_TBL_SIZE);
+			log_tbl.logdate_time = g_pkt_basic_info.ts;
+			log_tbl.logdetail = log_detail;
+			log_tbl.model_name = g_model_name;
+			log_tbl.p_type_id = session_id->pro_type_id;
+			log_tbl.operater_type = operater_type;
+			/* write */
+			write_log_into_db(&log_tbl, g_cur_date);
+		}
+
+		if(session_id->account.warn) {
+
+			memset(&alarm_tbl, 0x00, EA_ALARM_TBL_SIZE);
+			alarm_tbl.session_id = session_id->session_id;
+			alarm_tbl.p_type_id = session_id->pro_type_id;
+			alarm_tbl.pro_id = session_id->protected_res_no;
+			alarm_tbl.pro_name = session_id->protected_res_name;
+			alarm_tbl.model_name = g_model_name;
+			alarm_tbl.src_mac = session_id->src_mac;
+			alarm_tbl.src_ip = session_id->src_ip;
+			alarm_tbl.dst_mac = session_id->dst_mac;
+			alarm_tbl.dst_ip = session_id->dst_ip;
+			alarm_tbl.src_username = session_id->usr_info.src_usrname;
+			alarm_tbl.usr_id = session_id->usr_info.src_usrid;
+			alarm_tbl.alarm_date = g_pkt_basic_info.ts;
+			alarm_tbl.description = description;
+			/* write */
+			write_alarm_into_db(&alarm_tbl, g_cur_date);
+		}
+
+		if(session_id->account.block)
+			close_tcp(session_id, NULL);
+
+	} /* flag is ACCOUNT */
+
+	else if(flag == CMD) {
+
+		if(session_id->cmd.log) {
+
+			memset(&log_tbl, 0x00, EA_LOG_TBL_SIZE);
+			log_tbl.logdate_time = g_pkt_basic_info.ts;
+			log_tbl.logdetail = log_detail;
+			log_tbl.model_name = g_model_name;
+			log_tbl.p_type_id = session_id->pro_type_id;
+			log_tbl.operater_type = operater_type;
+			write_log_into_db(&log_tbl, g_cur_date);
+		}
+
+		if(session_id->cmd.warn) {
+
+			memset(&alarm_tbl, 0x00, EA_ALARM_TBL_SIZE);
+			alarm_tbl.session_id = session_id->session_id;
+			alarm_tbl.p_type_id = session_id->pro_type_id;
+			alarm_tbl.pro_id = session_id->protected_res_no;
+			alarm_tbl.pro_name = session_id->protected_res_name;
+			alarm_tbl.model_name = g_model_name;
+			alarm_tbl.src_mac = session_id->src_mac;
+			alarm_tbl.src_ip = session_id->src_ip;
+			alarm_tbl.dst_mac = session_id->dst_mac;
+			alarm_tbl.dst_ip = session_id->dst_ip;
+			alarm_tbl.src_username = session_id->usr_info.src_usrname;
+			alarm_tbl.usr_id = session_id->usr_info.src_usrid;
+			alarm_tbl.alarm_date = g_pkt_basic_info.ts;
+			alarm_tbl.description = description;
+			write_alarm_into_db(&alarm_tbl, g_cur_date);
+		}
+
+		if(session_id->cmd.block)
+			close_tcp(session_id, NULL);
+	} /* flag is COMMAND */
+
+	else if(flag == CUSTOM) {
+
+		if(session_id->custom.log) {
+
+			memset(&log_tbl, 0x00, EA_LOG_TBL_SIZE);
+			log_tbl.logdate_time = g_pkt_basic_info.ts;
+			log_tbl.logdetail = log_detail;
+			log_tbl.model_name = g_model_name;
+			log_tbl.p_type_id = session_id->pro_type_id;
+			log_tbl.operater_type = operater_type;
+			write_log_into_db(&log_tbl, g_cur_date);
+		}
+
+		if(session_id->custom.warn){
+
+			memset(&alarm_tbl, 0x00, EA_ALARM_TBL_SIZE);
+			alarm_tbl.session_id = session_id->session_id;
+			alarm_tbl.p_type_id = session_id->pro_type_id;
+			alarm_tbl.pro_id = session_id->protected_res_no;
+			alarm_tbl.pro_name = session_id->protected_res_name;
+			alarm_tbl.model_name = g_model_name;
+			alarm_tbl.src_mac = session_id->src_mac;
+			alarm_tbl.src_ip = session_id->src_ip;
+			alarm_tbl.dst_mac = session_id->dst_mac;
+			alarm_tbl.dst_ip = session_id->dst_ip;
+			alarm_tbl.src_username = session_id->usr_info.src_usrname;
+			alarm_tbl.usr_id = session_id->usr_info.src_usrid;
+			alarm_tbl.alarm_date = g_pkt_basic_info.ts;
+			alarm_tbl.description = description;
+			write_alarm_into_db(&alarm_tbl, g_cur_date);
+		}
+
+		if(session_id->custom.block)
+			close_tcp(session_id, NULL);
+
+	} /* flag is CUSTOM */
+
+	else if(flag == FEATURE) {
+
+		if(session_id->pro_feature.log) {
+
+			memset(&log_tbl, 0x00, EA_LOG_TBL_SIZE);
+			log_tbl.logdate_time = g_pkt_basic_info.ts;
+			log_tbl.logdetail = log_detail;
+			log_tbl.model_name = g_model_name;
+			log_tbl.p_type_id = session_id->pro_type_id;
+			log_tbl.operater_type = operater_type;
+			write_log_into_db(&log_tbl, g_cur_date);
+		}
+
+		if(session_id->pro_feature.warn){
+
+			memset(&alarm_tbl, 0x00, EA_ALARM_TBL_SIZE);
+			alarm_tbl.session_id = session_id->session_id;
+			alarm_tbl.p_type_id = session_id->pro_type_id;
+			alarm_tbl.pro_id = session_id->protected_res_no;
+			alarm_tbl.pro_name = session_id->protected_res_name;
+			alarm_tbl.model_name = g_model_name;
+			alarm_tbl.src_mac = session_id->src_mac;
+			alarm_tbl.src_ip = session_id->src_ip;
+			alarm_tbl.dst_mac = session_id->dst_mac;
+			alarm_tbl.dst_ip = session_id->dst_ip;
+			alarm_tbl.src_username = session_id->usr_info.src_usrname;
+			alarm_tbl.usr_id = session_id->usr_info.src_usrid;
+			alarm_tbl.alarm_date = g_pkt_basic_info.ts;
+			alarm_tbl.description = description;
+			write_alarm_into_db(&alarm_tbl, g_cur_date);
+		}
+		if(session_id->pro_feature.block)
+			close_tcp(session_id, NULL);
+	} /* flag is FEATURE */
+}
+
+
+	int
+close_tcp(EA_SESSION_TBL_ID session_id,
+	EA_AlARM_TBL_ID alarm_tbl)
+{
+	UDP_CLOSEINFO arp_info;
+	memset(&arp_info, 0x00, UDP_CLOSEINFO_SIZE);
+
+	if(alarm_tbl)
+	{
+		memcpy(arp_info.src_mac, alarm_tbl->src_mac, 6);
+		memcpy(arp_info.dst_mac, alarm_tbl->dst_mac, 6);
+		arp_info.src_ip = alarm_tbl->src_ip;
+		arp_info.dst_ip = alarm_tbl->dst_ip;
+		send_arp_block_pkt(raw_socket_arp, &arp_info);
+		send_arp_block_pkt(raw_socket_arp, &arp_info);	
+	}
+	else
+	{
+		memcpy(arp_info.src_mac, session_id->src_mac, 6);
+		memcpy(arp_info.dst_mac, session_id->dst_mac, 6);
+		arp_info.src_ip = session_id->src_ip;
+		arp_info.dst_ip = session_id->dst_ip;
+		send_arp_block_pkt(raw_socket_arp, &arp_info);
+		send_arp_block_pkt(raw_socket_arp, &arp_info);
+	}
+
+/*
+	SendCloseTcp(raw_socket, session_id->src_ip, session_id->src_port, \
+		session_id->dst_ip, session_id->dst_port, session_id->up_seq, \
+		session_id->up_ack);
+	SendCloseTcp(raw_socket, session_id->dst_ip, session_id->dst_port, \
+		session_id->src_ip, session_id->src_port, session_id->down_seq, \
+		session_id->down_ack);
+*/
+	return TRUE;
+}
+
+
+int get_time(char *times, struct timeval ts)
+{
+	struct tm* time_tmp = NULL;
+	char   tv_usec[7];
+	memset(tv_usec, 0x00, 7);
+	
+	time_tmp = localtime(&(ts.tv_sec));
+	strftime(times, TIME_STR_SIZE+1, "%Y-%m-%d %H:%M:%S", time_tmp);
+	
+	sprintf(tv_usec, ".%06lu", ts.tv_usec);
+	strcat(times, tv_usec);
+
+	return TRUE;
+}

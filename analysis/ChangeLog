@@ -1,0 +1,45 @@
+文件夾src/ftp-analysis中的源文件说明:
+
+
+1. )
+这两个文件主要对log(日志)文件操作所声明和实现的一系列函数
+	analyze_log.h
+	analyze_log.c
+
+2. )
+对不同级别的信息进行打印, 调用的是vprintf(变长的参数)
+	analyze_debug.h
+	analyze_debug.c
+
+3. )
+对报文进行解析(从ethernet-header, ip-header, tcp/udp-header)
+	analyze_decode.h
+	analyze_decode.c
+
+4. )
+对配置文件进行操作
+	analyze_config.h
+	analyze_config.c
+
+5. )
+把参数p_par中的数据流根据格式分解到PAR_ITF_ANALYZE_ID和EA_ITF_PAR_INFO_ID
+两个数据结构中.
+	analyze_param.h
+	analyze_param.c
+
+6. )
+操作/data/pkts/FTP/*.tmp/pdat文件.
+	analyze_file.h
+	analyze_file.c
+
+7. )
+对/eAudio/conf/{ftp_cfg_file.conf, ftp_cmd_cfg.conf, ftp_monitor_cfg.conf} 三个
+文件进行操作.
+	ftp_analyze_config.h
+	ftp_analyze_config.c
+
+8. )
+global struct.
+	1. PAR_ITF_ANALYZE.
+	2. CALLBACK_FUNC_SET.
+	3. 
