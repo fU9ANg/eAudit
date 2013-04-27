@@ -8,11 +8,11 @@
 #ifndef _INTERFACE_ANALYZE_H
 #define _INTERFACE_ANALYZE_H
 
-#include<sys/types.h>
-#include "interface_pub.h"
+#include    <sys/types.h>
+#include    "interface_pub.h"
 
 /*packets file path suffix*/
-#define PKT_FILE_SUFFIX ".pdat"
+#define PKT_FILE_SUFFIX     ".pdat"
 #define PKT_FILE_TMP_SUFFIX ".tmp"
 
 /*the par to the analyze process*/
