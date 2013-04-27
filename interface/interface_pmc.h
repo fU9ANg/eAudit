@@ -1,27 +1,11 @@
-/*************************************************************************************
-* Copyright (c)
-* All rights reserved.
-* 
-* This is unpublished proprietary source code of Shanghai Sail Infomation TEC Co. LTD
-* The copyright notice above does not evidence any actual or intended
-* publication of such source code.
-*
-* file name:
-* file id:
-* summary:
-* 
-* current edition:
-* author:daiping
-* date:2007-9
-*
-* history of modification:
-*    modificator:增加了流量监测头定义和连接次数头定义
-*    date:2009/3/13
-*    content: tqy
-*
-* Copyright (c) 2007
-*	
-*/
+
+/*
+ * file: interface_pmc.h
+ * written 2009, 2010, 2011, 2012, 2013 by fU9ANg
+ * bb.newlife@gmail.com
+ * 增加了流量监测头定义和连接次数头定义
+ */
+
 #ifndef _INTERFACE_PMC_H
 #define _INTERFACE_PMC_H
 

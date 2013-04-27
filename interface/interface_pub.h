@@ -1,28 +1,12 @@
-/*************************************************************************************a
-* Copyright (c)
-* All rights reserved.
-* 
-* This is unpublished proprietary source code of Shanghai Sail Infomation TEC Co. LTD
-*
-* The copyright notice above does not evidence any actual or intended
-* publication of such source code.
-*
-* file name:
-* file id:
-* summary:
-* 
-* current edition:
-* author:daiping
-* date:2007-9
-*
-* history of modification:
-*    modificator:
-*    date:2009/03/16
-*    content:增加了NTP配置文件定义和系统配置信息定义
-*
-* Copyright (c) 2007
-*	
-*/
+
+/*
+ * file: interface_pub.h
+ * written 2009, 2010, 2011, 2012, 2013 by fU9ANg
+ * bb.newlife@gmail.com
+ * 增加了NTP配置文件定义和系统配置信息定义
+ */
+
+
 #ifndef _INTERFACE_PUB_H
 #define _INTERFACE_PUB_H
 
@@ -313,69 +297,77 @@ typedef struct tagAUTHORIZE_PROTOCOL_FEATURE_TYPE{
 }AUTHORIZE_PROTOCOL_FEATURE_TYPE,*AUTHORIZE_PROTOCOL_FEATURE_TYPE_ID;
 #define authorize_protocol_feature_type_size sizeof(AUTHORIZE_PROTOCOL_FEATURE_TYPE)
 	/*自定义授权协议特征列表结构体定义*/
-typedef struct tagAUTHORIZE_PROTOCOL_FEATURE{
+typedef struct tagAUTHORIZE_PROTOCOL_FEATURE
+{
 	int mode_switch;
 	unsigned long pro_feature_num;
 	unsigned long authorize_id;
 	key_t authorize_protocol_feature_key;
 	NOT_AUTHORIZE_EVENT against_authorize_event;
-}AUTHORIZE_PROTOCOL_FEATURE,*AUTHORIZE_PROTOCOL_FEATURE_ID;
+}   AUTHORIZE_PROTOCOL_FEATURE,*AUTHORIZE_PROTOCOL_FEATURE_ID;
 #define authorize_protocol_feature_size sizeof(AUTHORIZE_PROTOCOL_FEATURE)
 /*协议特征参数*/
-typedef struct tagPRO_FEATURE_PARA{
+typedef struct tagPRO_FEATURE_PARA
+{
 	key_t pro_feature_key;
 	int pro_feature_num;
         int shm_id;
-}PRO_FEATURE_PARA,*PRO_FEATURE_PARA_ID;
+}   PRO_FEATURE_PARA,*PRO_FEATURE_PARA_ID;
 #define pro_feature_para_size sizeof(PRO_FEATURE_PARA)
 
-typedef struct tagSRC_INFO{
+typedef struct tagSRC_INFO
+{
 	unsigned long src_ip;
 	unsigned char src_mac[20];
 	unsigned short sport;
-}SRC_INFO,*SRC_INFO_ID;
+}   SRC_INFO,*SRC_INFO_ID;
 #define SRC_INFO_SIZE sizeof(SRC_INFO)
 
 /*目的信息*/
-typedef struct tagDST_INFO{
+typedef struct tagDST_INFO
+{
 	unsigned long dst_ip;
 	unsigned char dst_mac[20];
 	unsigned short dport;
-}DST_INFO,*DST_INFO_ID;
+}   DST_INFO,*DST_INFO_ID;
 #define DST_INFO_SIZE sizeof(DST_INFO)
 
 /*重定向端口*/
-typedef struct tagREDIRECTION_BASIC_INFO{
+typedef struct tagREDIRECTION_BASIC_INFO
+{
 	unsigned long rule_id;
 	unsigned long pro_id;
 	char pro_name[32];
 	unsigned char filter_pkt_type;
 	unsigned long  ip;
 	unsigned short port;
-        int mode_switch;
+    int mode_switch;
 	unsigned long res_index;
-}REDIRECTION_BASIC_INFO,*REDIRECTION_BASIC_INFO_ID;
+}   REDIRECTION_BASIC_INFO,*REDIRECTION_BASIC_INFO_ID;
 #define REDIRECTION_BASIC_INFO_SIZE sizeof(REDIRECTION_BASIC_INFO)
 
-typedef struct tagREDIRECTION_PORT_INFO{
+typedef struct tagREDIRECTION_PORT_INFO
+{
 	unsigned char flag;
 	REDIRECTION_BASIC_INFO redirect_info;
-}REDIRECTION_PORT_INFO,*REDIRECTION_PORT_INFO_ID;
+}   REDIRECTION_PORT_INFO,*REDIRECTION_PORT_INFO_ID;
 #define REDIRECTION_PORT_INFO_SIZE sizeof(REDIRECTION_PORT_INFO)
 /*定义监控系统信息配置结构体*/
- typedef struct tagMONITOR_SYSINFO{
+ typedef struct tagMONITOR_SYSINFO
+{
 	int cpu_use_rate;
 	int mem_use_rate;
 	int hd_use_rate;
-}MONITOR_SYSINFO,*MONITOR_SYSINFO_ID;
+}   MONITOR_SYSINFO,*MONITOR_SYSINFO_ID;
 #define MONITOR_SYSINFO_SIZE sizeof(MONITOR_SYSINFO)
 /*定义阻断队列数配置结构体*/
-typedef struct tagBLOCK_QUEQUE_NUM{
+typedef struct tagBLOCK_QUEQUE_NUM
+{
 	unsigned long fst_block_queque_num;
 	unsigned long snd_block_queque_num;
 	unsigned long block_ip_queque_num;
 	unsigned long snd_check_block_queque_num;
-}BLOCK_QUEQUE_NUM,*BLOCK_QUEQUE_NUM_ID;
+}   BLOCK_QUEQUE_NUM,*BLOCK_QUEQUE_NUM_ID;
 #define BLOCK_QUEQUE_NUM_SIZE sizeof(BLOCK_QUEQUE_NUM)
 /*为了授权信息改造工程修改结构FOR 2009/06/09*/
 /*the function switch*/
@@ -392,7 +384,7 @@ typedef struct tagCFG_FILE_SET
 {
     unsigned long maxPktFileSize;   /*每个文件的最大大小*/
     unsigned long maxPktFileNum;
-}CFG_FILE_SET,*CFG_FILE_SET_ID;
+}   CFG_FILE_SET,*CFG_FILE_SET_ID;
 #define CFG_FILE_SET_SIZE sizeof(CFG_FILE_SET)
 
 /*the que cfg information*/
@@ -404,7 +396,7 @@ typedef struct tagQUE_INFO
 
     key_t shmKey;
     key_t semKey;
-}QUE_INFO,*QUE_ID;
+}   QUE_INFO,*QUE_ID;
 #define QUE_INFO_SIZE sizeof(QUE_INFO)
 /* 1 eAudit_sys.conf配置文件结构体定义*/
 typedef struct tagEAUDIT_SYS_CONF{
@@ -423,14 +415,14 @@ typedef struct tagEAUDIT_SYS_CONF{
 	char DcAuthServIp[20];
 	unsigned short DcAuthServPort;
 	unsigned  long work_mode;
-}EAUDIT_SYS_CONF,*EAUDIT_SYS_CONF_ID;
+}   EAUDIT_SYS_CONF,*EAUDIT_SYS_CONF_ID;
 #define EAUDIT_SYS_CONF_SIZE sizeof(EAUDIT_SYS_CONF)
 /*the header info of file*/
 typedef struct tagCFG_HEAD
 {
     int iNICNum;
     int iPerNICQueNum;
-}CFG_HEAD,*CFG_HEAD_ID;
+}   CFG_HEAD,*CFG_HEAD_ID;
 #define CFG_HEAD_SIZE sizeof(CFG_HEAD) 
 
 /*the cfg header info of file*/
@@ -442,14 +434,14 @@ typedef struct tagCFG_NIC_BASIC
     char NICName[NICNAMESIZE+1];
     key_t hdQueShmKey;
     key_t hdQueSemKey;
-}CFG_NIC_BASIC,*CFG_NIC_BASIC_ID;
+}   CFG_NIC_BASIC,*CFG_NIC_BASIC_ID;
 #define CFG_NIC_BASIC_SIZE sizeof(CFG_NIC_BASIC)
 /* 2 Capture_NIC.conf配置文件结构定义*/
 typedef struct tagCAPTURE_NIC_CONF{
 	CFG_HEAD cfg_hdr;
 	CFG_NIC_BASIC_ID nic_basic_buf;
 	QUE_ID cfg_que_info;
-}CAPTURE_NIC_CONF,*CAPTURE_NIC_CONF_ID;
+}   CAPTURE_NIC_CONF,*CAPTURE_NIC_CONF_ID;
 #define CAPTURE_NIC_CONF_SIZE sizeof(CAPTURE_NIC_CONF)
 
 typedef struct tagSUPPORT_PRO_NODE
@@ -458,7 +450,7 @@ typedef struct tagSUPPORT_PRO_NODE
     char pro_name[MAX_PRO_NAME_SIZE + 1];
     int protect_num;
     int code;
-}SUPPORT_PRO_NODE,*SUPPORT_PRO_NODE_ID;
+}   SUPPORT_PRO_NODE,*SUPPORT_PRO_NODE_ID;
 #define SUPPORT_PRO_NODE_SIZE sizeof(SUPPORT_PRO_NODE)
 /*配置各个KEY  值和配置数*/
 typedef struct tagCONFIG_KEY{
@@ -466,7 +458,7 @@ typedef struct tagCONFIG_KEY{
 	int pro_tbl_shm_id;
 	int pro_num;
 	
-       key_t protected_resources_list_key;
+    key_t protected_resources_list_key;
 	int protected_resource_list_id;
 	int protected_resources_num;
 	
@@ -496,8 +488,8 @@ typedef struct tagCONFIG_KEY{
 	
 	key_t tcpclosequeptr_key;
 	int tcpclosequequeptr_shmid;
-    	int  tcpclosefirstque_shmid;
-    	int tcpclosesecondque_shmid;
+    int  tcpclosefirstque_shmid;
+    int tcpclosesecondque_shmid;
    	int ipque_shmid;
 	int snd_check_block_shmid;
 	key_t tcpclosefirstque_key;
@@ -508,7 +500,7 @@ typedef struct tagCONFIG_KEY{
 	key_t pid_info_shm_key;
 	int pid_info_shm_id;
 	key_t ip_queque_sem_key;
-      	int ip_queque_sem_id;
+    int ip_queque_sem_id;
        
 	
 	key_t run_cfg_shm_key;
@@ -520,24 +512,25 @@ typedef struct tagCONFIG_KEY{
 	int UsrNum;
 	int ProResNum;
 	int Pro_Real_Line;
-}CONFIG_KEY,*CONFIG_KEY_ID;
+}   CONFIG_KEY,*CONFIG_KEY_ID;
 #define CONFIG_KEY_SIZE sizeof(CONFIG_KEY)
 //2009 11 03 add flux connection configure
 typedef struct tagFLUXCONNECTION{
-		int pro_id;
-		int flux_num;
-		int flux_check_timevals;
-		int connect_num;
-		int connect_check_timevals;
-		NOT_AUTHORIZE_EVENT against_authorize_event;
-}FLUXCONECTION,*FLUXCONECTION_ID;
+    int pro_id;
+    int flux_num;
+    int flux_check_timevals;
+    int connect_num;
+    int connect_check_timevals;
+    NOT_AUTHORIZE_EVENT against_authorize_event;
+}   FLUXCONECTION,*FLUXCONECTION_ID;
 #define FLUXCONNETION_SIZE sizeof(FLUXCONECTION)
 
 
 /*配置启动基本服务结构体定义*/
- typedef struct tagBASIC_SERV{
+typedef struct tagBASIC_SERV
+{
 	char serv_name[32];
-}BASIC_SERV,*BASIC_SERV_ID;
+}   BASIC_SERV,*BASIC_SERV_ID;
 #define BASIC_SERV_SIZE sizeof(BASIC_SERV)
 
 /*动态身份认证网络通信结构体*/
@@ -551,9 +544,7 @@ typedef struct tag_SESSION_HDR
     unsigned long  param_length;
     unsigned long  reserved;
     unsigned long  prt_crc;
-}PSESSION_HDR,*PSESSION_HDR_ID;          /*session head define*/
-
-
+}   PSESSION_HDR,*PSESSION_HDR_ID;          /*session head define*/
 
 
 /*授权关系列表*/
@@ -561,7 +552,7 @@ typedef struct tagSQ_LIST_MEM
 {
     int iUsrGId;       //用户组ID
     int iRuleGId;      //资源组ID
-}SQ_LIST_MEM,*SQ_LIST_MEM_ID;
+}   SQ_LIST_MEM,*SQ_LIST_MEM_ID;
 #define SQ_LIST_MEM_SIZE sizeof(SQ_LIST_MEM)
 
 /*get now seconds*/
@@ -579,8 +570,8 @@ typedef struct tagSQ_LIST_MEM
 /*can capture packet max size*/
 #define MAX_CAP_PKT_SIZE  65535
 
-typedef unsigned char UINT8;
-typedef unsigned short UINT16;
+typedef unsigned char   UINT8;
+typedef unsigned short  UINT16;
 
 /*NIC NAME SIZE*/
 #define NICNAMESIZE 16 
@@ -599,7 +590,7 @@ typedef enum
     PIPE_READ = 0, 
     PIPE_WRITE,
     PIPE_DES_NUM
-}EN_WR_PIPE; 
+}   EN_WR_PIPE; 
 
 /*the name of sys*/
 #define SYS_NAME STR(eAudit)
@@ -649,7 +640,8 @@ typedef enum
 #define EAUDIT_VERSION_MINOR 0
 
 /*the status of the sys*/
-typedef enum{
+typedef enum
+{
     SYS_NO_WORK = 0,
     SYS_FOR_READY,	
     SYS_CONFIGING,
@@ -658,24 +650,23 @@ typedef enum{
     SYS_START_ANALYSIS,  
     SYS_START_MOT, 
     SYS_RUNNING
-}EN_SYS_STATUS;
+}   EN_SYS_STATUS;
 
 /*open dir return value*/
-typedef enum{
+typedef enum
+{
     DIR_IS_NOEXISTS = 0,
     DIR_IS_EMPTY	 = 1,
     DIR_IS_NOEMPTY = 2,
     OPEN_DIR_ERR
-}EN_PROC_DIR_RET;
+}   EN_PROC_DIR_RET;
 
 /*the function switch value*/
-typedef enum{
+typedef enum
+{
     OFF = 0,
     ON
-}EN_SWITCH_STAT;
-
-
-
+}   EN_SWITCH_STAT;
 
 //#pragma pack()
 
@@ -759,7 +750,7 @@ typedef struct
 	int flux_interval;
 	int flux_threshold;
 	NOT_AUTHORIZE_EVENT not_authorize_event;
-}P_MONITOR_INFO, *P_MONITOR_INFO_ID;
+}   P_MONITOR_INFO, *P_MONITOR_INFO_ID;
 #define P_MONITOR_INFO_SIZE sizeof(P_MONITOR_INFO)
 
 
@@ -772,10 +763,7 @@ typedef struct
 	char mac[13];
 	char user[256];
 	int flag;
-}P_USER_INFO, *P_USER_INFO_ID;
+}   P_USER_INFO, *P_USER_INFO_ID;
 #define P_USER_INFO_SIZE sizeof(P_USER_INFO)
 
-
-
 #endif
-
