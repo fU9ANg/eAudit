@@ -6,7 +6,7 @@
 #
 
 MAIN        = DC_server
-OBJS        = DC_server.o	DC_crc32.o
+OBJS        = server.o crc32.o
 CC          = gcc
 INCDIRS     = -I. -I../inc -I/usr/include/eaudit_comm -I../interface
 CFLAGS      = -Wall -w -g -O2 $(INCDIRS)
@@ -21,9 +21,6 @@ $(MAIN):${OBJS}
 
 .c.o:
 	$(CC) $(CFLAGS) -c $<
-
-%.c: %.pgc
-	$(ECPG) $<
 
 clean:
 	/bin/rm -f core *.o
