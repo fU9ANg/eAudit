@@ -1,0 +1,7 @@
+label 3.3. 修改来Makefile 修改了数据库库文件路径定义
+lable 3.4 在日志表中增加了P_TYPE_ID字段。并修改了写日志表错误BUG,修改了写入ea_log_system_XXXXXX表
+label 3.5 修改了长时间运行阻断效果不好的问题
+label 3.7 修改了长时间运行，没有抓包效果不好的问题。
+label 3.8 修改了send_arp_block_pkt、send_icmp_host_unreachable、raw_net_socket函数与comm_lib重定义的问题。
+label 3.9 修改了3.8修改错误的问题。
+label 4.0 屏蔽打印信息。

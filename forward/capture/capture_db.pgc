@@ -1,0 +1,154 @@
+
+#include <sqlca.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+
+EXEC SQL INCLUDE sqlca;
+
+#include "capture_db.h"
+
+
+
+
+int connect_db(const char *host, const int port, const char *database, const char *user, const char *password)
+{
+	if(password != NULL && password[0] == 0x00)
+	{
+		password = NULL;
+	}
+	if ((host != NULL) && (port != 0) && (database!= NULL ) && (user != NULL) && (password != NULL))
+	{
+		if(ESQL_OK == conn_db( host, port, database, user, password))
+		{
+			return ESQL_OK;
+		}
+	}
+
+	usleep(100);
+
+	return conn_local_db();
+
+}
+int conn_db(const char *host, const int port, const char *database, const char *user, const char *password)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char db_target[64];
+		char db_user[32];
+		char db_password[64];
+	EXEC SQL END DECLARE SECTION;
+
+	if(!strcmp(host,"127.0.0.1") || !strcmp(host, "localhost"))
+		snprintf(db_target, 64, "unix:postgresql://%s:%d/%s",host, port, database);
+	else
+		snprintf(db_target, 64, "tcp:postgresql://%s:%d/%s",host, port, database);
+    
+	snprintf(db_user, 32,"%s",user);
+	snprintf(db_password, 64, "%s", password);
+	
+	EXEC SQL CONNECT TO :db_target USER :db_user USING :db_password;
+	if(sqlca.sqlcode < 0) 
+	{
+		fprintf(stderr, "%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+		return ESQL_ERR;
+	}
+	
+	EXEC SQL SET CLIENT_ENCODING TO 'GBK';
+	return ESQL_OK;
+}
+
+int conn_local_db()
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char db_target[64];
+		char db_user[32];
+	EXEC SQL END DECLARE SECTION;
+	
+	snprintf(db_target, 64, "unix:postgresql://%s:%d/%s","127.0.0.1", 5432, "eAudit");
+	snprintf(db_user, 32, "%s","postgres");
+	
+	EXEC SQL CONNECT TO :db_target  USER :db_user;
+	if(sqlca.sqlcode < 0)
+	{
+		fprintf(stderr, "%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+		return ESQL_ERR;
+	}
+	EXEC SQL SET CLIENT_ENCODING TO 'GBK';
+
+	return ESQL_OK;
+}
+
+
+int disconn_db(void)
+{
+	EXEC SQL DISCONNECT;
+	
+	if(sqlca.sqlcode < 0)
+	{
+		fprintf(stderr, "%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+		return ESQL_ERR;
+	}
+	return ESQL_OK;
+}
+
+int write_block_log(BLOCKLOGINFO_ID blockloginfo_id)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char sqlstr[2048];	
+	EXEC SQL END DECLARE SECTION;
+
+	char str[63];
+        char cur_date[64];
+        char log_date[64];
+
+	struct in_addr tmpaddr;
+
+	//char log_time[33];
+	struct tm* tmptime;
+
+	char src_ip[16];
+	char dst_ip[16];
+	tmpaddr.s_addr = blockloginfo_id->src_ip;
+	sprintf(src_ip, "%s", inet_ntoa(tmpaddr));
+	tmpaddr.s_addr = blockloginfo_id->dst_ip;
+	sprintf(dst_ip, "%s", inet_ntoa(tmpaddr));
+        memset(log_date,0x00,64);
+    	memset(sqlstr,0x00,2048);
+	get_current_date((char*)cur_date);
+        tmptime = localtime(&(blockloginfo_id->time));
+	strftime(log_date, 33, "%Y-%m-%d %H:%M:%S", tmptime);
+        sprintf(str, "%s:%d	非法访问	%s:%d", src_ip, ntohs(blockloginfo_id->src_port), dst_ip, ntohs(blockloginfo_id->dst_port));
+	sprintf((unsigned char *)sqlstr,"INSERT INTO \"public\".ea_log_system_%s (p_type_id,logdate_time,sys_name,operate_type,model_name,log_details) values(%d,'%s','%s','%s','%s','%s')",\
+		(char *)cur_date,24,(char *)log_date,"SNAM","阻断日志","CAPTURE",(unsigned char *)str);
+
+
+	
+	
+	//tmptime = localtime(&(blockloginfo_id->time));
+	//strftime(log_time, 33, "%Y-%m-%d %H:%M:%S", tmptime);
+	
+	//sprintf(sqlstr,"INSERT INTO \"eAPUBLIC\".ea_log(\
+	//	logdatetime, operatetype, logdetails)\
+	//	values ('%s', '阻断日志', '%s')", \
+	//	log_time,  log_details);
+	EXEC SQL EXECUTE IMMEDIATE :sqlstr;
+	if (sqlca.sqlcode < 0)
+	{
+		DEBUG("%s", sqlstr);
+		fprintf(stderr, "write_log_into_db1%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+		return ESQL_ERR;
+	}
+	else
+	{
+		EXEC SQL COMMIT;
+		if(sqlca.sqlcode < 0)
+		{
+			fprintf(stderr, "write_log_into_db2:%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+			return ESQL_ERR;
+		}
+	}
+	return TRUE;
+}

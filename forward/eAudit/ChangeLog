@@ -1,0 +1,13 @@
+lable 5.1 修改了越权访问配置解析和watchdog写日志和报警表，以前是ea_log ea_warn 现在变成了ea_log_system 和ea_warn_system表中
+label 5.2 修改了日志和报警表中，增加了P_TYPE_ID字段
+label 5.3 修改了系统中出现创建共享内存错误的时候，系统第二次不能重启的情况
+label 5.4 增加了重启CAPTURE 功能，目前默认是4小时一次启动
+label 5.5 修改屏蔽了打印信息
+label 5.6 修改了解析策略速度慢的问题和一些打印信息
+label 5.7 添加检测授权状态，未授权退出
+label 5.8 修改了数据库连接方式.
+label 5.9 修改了eAudit运行过程中退出的问题main_process_circle.
+label 6.0 修改了eAudit系统检测报警表中某些字段为空的问题.
+label 6.1 修改了eAudit系统在认证模式下自启动有时候不能带起CONNECT SERVER 问题
+label 6.2 修改了eAudit系统支持审计服务器工作模式
+label 6.3 修改了eAudit系统在认证模式下自启动有时候不能带起CONNECT SERVER 问题

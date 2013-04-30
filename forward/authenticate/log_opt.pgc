@@ -1,0 +1,106 @@
+
+#include <sqlca.h>
+#include <time.h>
+#define ESQL_OK                1
+#define ESQL_ERR               0
+
+extern int conn_db(const char *host, const int port, const char *database,const char *user, const char *password);
+extern int close_db(void);
+extern int write_log_info(char * str);
+
+
+EXEC SQL INCLUDE sqlca;
+#define ESQL_PRINT_ERR() fprintf(stderr, "%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+EXEC SQL BEGIN DECLARE SECTION;
+   char g_sqlstr[10000];
+EXEC SQL END DECLARE SECTION;
+
+//unsigned  char g_sqlstr[10000];
+
+int conn_db(const char *host, const int port, const char *database,
+		        const char *user, const char *password)
+{
+	EXEC SQL BEGIN DECLARE SECTION;
+		char db_target[64];
+		char db_user[32];
+		char db_password[64];
+	EXEC SQL END DECLARE SECTION;
+
+	if(!strcmp(host,"127.0.0.1") || !strcmp(host, "localhost"))
+		snprintf(db_target, 64, "unix:postgresql://%s:%d/%s",host, port, database);
+	else
+		snprintf(db_target, 64, "tcp:postgresql://%s:%d/%s",host, port, database);
+    
+	snprintf(db_user, 32,"%s",user);
+	snprintf(db_password, 64, "%s", password);
+	
+	EXEC SQL CONNECT TO :db_target USER :db_user USING :db_password;
+	if(sqlca.sqlcode < 0) 
+	{
+		fprintf(stderr, "%ld %s\n",sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
+		return ESQL_ERR;
+	}
+	
+	EXEC SQL SET CLIENT_ENCODING TO 'GBK';
+	return ESQL_OK;
+}
+
+int close_db(void)
+{
+    EXEC SQL DISCONNECT;
+    if(sqlca.sqlcode < 0) 
+    {
+        ESQL_PRINT_ERR();   
+        return ESQL_ERR;
+    }
+    return ESQL_OK;
+}
+
+int write_log_info(char * str)
+{    
+        char cur_date[64];
+        char log_date[64];
+
+        struct tm *timep ;                       /*definition struct var*/
+        time_t time_log ;                        /*definition time_log var*/
+
+	int ret=ESQL_OK;
+
+    	memset(g_sqlstr,0x00,10000);
+        time(&time_log) ;                        /*getting system time and date*/
+        timep = localtime(&time_log) ;           /*time_log transform string*/
+
+        sprintf(cur_date,  "%04d_%02d_%02d", timep->tm_year+1900,timep->tm_mon+1,timep->tm_mday);
+
+        strftime(log_date, 33, "%Y-%m-%d %H:%M:%S", timep);
+
+        sprintf(g_sqlstr,"INSERT INTO \"public\".ea_log_system_%s (p_type_id,logdate_time,sys_name,\
+               operate_type,model_name,log_details) values(%d,'%s','%s','%s','%s','%s')",\
+                cur_date,39,log_date,"SNAM","用户登入登出日志","CONNECT_SERVER",str);
+
+        //printf("%s\n",g_sqlstr);
+
+        EXEC SQL EXECUTE IMMEDIATE :g_sqlstr;
+	//printf(" session sqlca.sqlcode=%ld\n",sqlca.sqlcode);
+        if (sqlca.sqlcode < 0)
+        {
+            ESQL_PRINT_ERR();
+            ret = ESQL_ERR;
+        }
+        else
+        {
+            EXEC SQL COMMIT;
+            if(sqlca.sqlcode < 0)
+            {
+                //printf( "COMMIT sqlca.sqlcode=%ld\n",sqlca.sqlcode);
+                ESQL_PRINT_ERR();
+                ret = ESQL_ERR;
+            }
+        }   
+    return ret;
+	
+}	
+
+
+
+
